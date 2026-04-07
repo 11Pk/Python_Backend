@@ -1,14 +1,84 @@
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
+from sqlalchemy import func
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timezone,timedelta
-from sqlalchemy import func
 
 app = Flask(__name__)
-
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# 1. Companies Model
+class companies(db.Model):
+    __tablename__ = 'companies'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+# 2. Warehouses Model
+class warehouses(db.Model):
+    __tablename__ = 'warehouses'
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey('companies.id'), nullable=False)
+    name = db.Column(db.String(255))
+    location = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+# 3. Products Model
+class products(db.Model):
+    __tablename__ = 'products'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    sku = db.Column(db.String(100), unique=True, nullable=False)
+    price = db.Column(db.Numeric(10, 2), nullable=False)
+    min_stock_level = db.Column(db.Integer, default=10) # Used for low-stock logic [cite: 340]
+    is_bundle = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+# 4. Inventory Model
+class inventory(db.Model):
+    __tablename__ = 'inventory'
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('warehouses.id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False, default=0)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    __table_args__ = (db.UniqueConstraint('product_id', 'warehouse_id', name='_product_warehouse_uc'),)
+
+# 5. Orders Model
+class orders(db.Model):
+    __tablename__ = 'orders'
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey('companies.id'), nullable=False)
+    customer_name = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(50), default='pending')
+    total_amount = db.Column(db.Numeric(10, 2))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+# 6. Order Items Model (Matches your error)
+class order_items(db.Model):
+    __tablename__ = 'order_items'
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    price = db.Column(db.Numeric(10, 2))
+
+# 7. Suppliers Model
+class suppliers(db.Model):
+    __tablename__ = 'suppliers'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    contact_info = db.Column(db.Text)
+
+# 8. Supplier Products Model
+class supplier_products(db.Model):
+    __tablename__ = 'supplier_products'
+    id = db.Column(db.Integer, primary_key=True)
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    cost_price = db.Column(db.Numeric(10, 2))
+   
 @app.route('/api/companies/<int:company_id>/alerts/low-stock', methods=['GET'])
 def get_low_stock_alerts(company_id):
     try:
